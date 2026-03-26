@@ -489,12 +489,17 @@ def dashboard(df, region):
         values = [r["amount_usd"] / 1e6 for _, r in flows.iterrows()]
 
         # Colors: institutions get their branded color, sectors get gray
+        def hex_to_rgba(h, a=0.4):
+            h = h.lstrip("#")
+            if len(h) == 3: h = "".join(c*2 for c in h)
+            return f"rgba({int(h[0:2],16)},{int(h[2:4],16)},{int(h[4:6],16)},{a})"
+
         node_colors = [INST_COLORS.get(i, "#999") for i in institutions] + ["#B0BEC5"] * len(sectors)
+        link_colors = [hex_to_rgba(INST_COLORS.get(institutions[s], "#cccccc")) for s in sources]
 
         fig_sk = go.Figure(go.Sankey(
             node=dict(pad=15, thickness=20, label=all_labels, color=node_colors),
-            link=dict(source=sources, target=targets, value=values,
-                      color=[INST_COLORS.get(institutions[s], "#ccc") + "66" for s in sources])))
+            link=dict(source=sources, target=targets, value=values, color=link_colors)))
         fig_sk.update_layout(
             title=f"Fund Flows — {sk_country} ({sk_period})",
             height=500, margin=dict(l=10, r=10, t=40, b=10))
