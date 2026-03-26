@@ -69,6 +69,11 @@ def load_data():
     df["amount_usd"] = pd.to_numeric(df["amount_usd"], errors="coerce").fillna(0)
     df["amount_eur"] = pd.to_numeric(df["amount_eur"], errors="coerce").fillna(0)
     df["approval_year"] = pd.to_numeric(df["approval_year"], errors="coerce")
+    # Fill missing approval_year from approval_date (IFC/MIGA have dates but no year)
+    mask = df["approval_year"].isna() & (df["approval_date"] != "")
+    if mask.any():
+        parsed = pd.to_datetime(df.loc[mask, "approval_date"], errors="coerce", dayfirst=False)
+        df.loc[mask, "approval_year"] = parsed.dt.year
     df["sector"] = df["sector"].str.title()
     return df
 
@@ -180,9 +185,6 @@ Cross-institution totals are indicative, not precise.
 
 **Note on Sahel DFI coverage:** Only **AFD** represents European bilateral DFIs in the Sahel dataset.
 EBRD, EIB, KfW, and CEB do not have project-level data available for Mali, Niger, or Chad.
-
-**Note on IFC/MIGA approval dates:** IFC and MIGA project records in the Sahel lack approval years
-in the source data. These projects appear in totals but not in time-series charts.
 
 ## Currency
 
@@ -398,9 +400,9 @@ def dashboard(df, region):
         if sec_stack == "Country":
             sec_agg = sdata_base.groupby(["sector", "country"])["amount_usd"].sum().reset_index()
             sec_agg["bn"] = sec_agg["amount_usd"] / 1e9
-            sec_agg["sector"] = pd.Categorical(sec_agg["sector"], categories=sector_order, ordered=True)
             fig_s = px.bar(sec_agg, y="sector", x="bn", color="country", orientation="h",
                            color_discrete_map=COUNTRY_COLORS,
+                           category_orders={"sector": sector_order},
                            title=f"Top 10 Sectors by Country ({sec_period})", barmode="stack")
             fig_s.update_layout(yaxis_title="", xaxis_title="USD (billions)", height=420,
                                margin=dict(l=10,r=10,t=40,b=10),
@@ -410,9 +412,9 @@ def dashboard(df, region):
             sdata_base["donor_group"] = sdata_base["institution"].apply(assign_donor_group)
             sec_agg = sdata_base.groupby(["sector", "donor_group"])["amount_usd"].sum().reset_index()
             sec_agg["bn"] = sec_agg["amount_usd"] / 1e9
-            sec_agg["sector"] = pd.Categorical(sec_agg["sector"], categories=sector_order, ordered=True)
             fig_s = px.bar(sec_agg, y="sector", x="bn", color="donor_group", orientation="h",
                            color_discrete_map=DONOR_GROUP_COLORS,
+                           category_orders={"sector": sector_order},
                            title=f"Top 10 Sectors by Donor Group ({sec_period})", barmode="stack")
             fig_s.update_layout(yaxis_title="", xaxis_title="USD (billions)", height=420,
                                margin=dict(l=10,r=10,t=40,b=10),
@@ -420,9 +422,8 @@ def dashboard(df, region):
         else:
             sec_agg = sdata_base.groupby("sector")["amount_usd"].sum().reset_index()
             sec_agg["bn"] = sec_agg["amount_usd"] / 1e9
-            sec_agg["sector"] = pd.Categorical(sec_agg["sector"], categories=sector_order, ordered=True)
-            sec_agg = sec_agg.sort_values("sector")
             fig_s = px.bar(sec_agg, y="sector", x="bn", orientation="h",
+                           category_orders={"sector": sector_order},
                            title=f"Top 10 Sectors ({sec_period})", color_discrete_sequence=[color])
             fig_s.update_layout(showlegend=False, yaxis_title="", xaxis_title="USD (billions)", height=420,
                                margin=dict(l=10,r=10,t=40,b=10))
@@ -489,10 +490,6 @@ def dashboard(df, region):
             fig_ppc.update_traces(textposition="outside", textinfo="label+percent")
             st.plotly_chart(fig_ppc, use_container_width=True)
 
-    # Note about private/IFC/MIGA missing years
-    if region == "Sahel":
-        st.caption("**Note:** IFC and MIGA projects (mostly private sector) lack approval dates in source data. "
-                   "They appear in totals and pie charts but not in time-series views.")
 
     st.divider()
 
