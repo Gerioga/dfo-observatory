@@ -201,6 +201,28 @@ CEB (Excel) · EIB (Excel) · EBRD (IATI) · WB (API) · IFC (Finances One) ·
 MIGA (Finances One) · KfW (IATI/BMZ) · AFD (OpenDataSoft) ·
 Chinese donors (AidData v3.0) · UNDP/UNICEF/WFP/FAO (IATI)
         """)
+
+        # Source coverage table — computed from data
+        st.markdown("## Source Coverage")
+        st.caption("Earliest and latest approval year per institution, by region.")
+        df_cov = load_data()
+        df_cov = df_cov[df_cov["approval_year"].notna()]
+        sahel_c = ["Mali", "Niger", "Chad"]
+        rows = []
+        for inst in sorted(df_cov["institution"].unique()):
+            idf = df_cov[df_cov["institution"] == inst]
+            # Serbia
+            s = idf[idf["country"] == "Serbia"]
+            s_range = f"{int(s['approval_year'].min())}–{int(s['approval_year'].max())}" if len(s) > 0 else "—"
+            s_n = len(s) if len(s) > 0 else 0
+            # Sahel
+            h = idf[idf["country"].isin(sahel_c)]
+            h_range = f"{int(h['approval_year'].min())}–{int(h['approval_year'].max())}" if len(h) > 0 else "—"
+            h_n = len(h) if len(h) > 0 else 0
+            rows.append({"Institution": inst, "Serbia (years)": s_range, "Serbia (#)": s_n,
+                          "Sahel (years)": h_range, "Sahel (#)": h_n})
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
         st.divider()
         c1, c2 = st.columns(2)
         with c1:
@@ -431,6 +453,58 @@ def dashboard(df, region):
 
     st.divider()
 
+    # ─── SANKEY: INSTITUTION → SECTOR ───
+    st.markdown("#### Fund Flows: Institution → Sector")
+    sk_c1, sk_c2 = st.columns([1, 1])
+    with sk_c1:
+        sk_period = st.radio("Period", ["All time", "Last 10 years", "Last 5 years", "Last 2 years"],
+                             horizontal=True, key="sk_p")
+    with sk_c2:
+        if region == "Sahel":
+            sk_countries = sorted(data["country"].unique())
+        else:
+            sk_countries = ["Serbia"]
+        sk_country = st.selectbox("Country", sk_countries, key="sk_country")
+
+    d_sk = pfilter(data, sk_period, yr_min)
+    d_sk = d_sk[d_sk["country"] == sk_country]
+    d_sk = d_sk[d_sk["amount_usd"] > 0]
+
+    if len(d_sk) > 0:
+        # Aggregate flows
+        flows = d_sk.groupby(["institution", "sector"])["amount_usd"].sum().reset_index()
+        flows = flows[flows["amount_usd"] > 0].sort_values("amount_usd", ascending=False)
+        # Keep top 10 sectors to avoid clutter
+        top_secs = flows.groupby("sector")["amount_usd"].sum().nlargest(10).index.tolist()
+        flows = flows[flows["sector"].isin(top_secs)]
+
+        institutions = sorted(flows["institution"].unique())
+        sectors = sorted(flows["sector"].unique())
+        all_labels = institutions + sectors
+        inst_idx = {name: i for i, name in enumerate(institutions)}
+        sec_idx = {name: i + len(institutions) for i, name in enumerate(sectors)}
+
+        sources = [inst_idx[r["institution"]] for _, r in flows.iterrows()]
+        targets = [sec_idx[r["sector"]] for _, r in flows.iterrows()]
+        values = [r["amount_usd"] / 1e6 for _, r in flows.iterrows()]
+
+        # Colors: institutions get their branded color, sectors get gray
+        node_colors = [INST_COLORS.get(i, "#999") for i in institutions] + ["#B0BEC5"] * len(sectors)
+
+        fig_sk = go.Figure(go.Sankey(
+            node=dict(pad=15, thickness=20, label=all_labels, color=node_colors),
+            link=dict(source=sources, target=targets, value=values,
+                      color=[INST_COLORS.get(institutions[s], "#ccc") + "66" for s in sources])))
+        fig_sk.update_layout(
+            title=f"Fund Flows — {sk_country} ({sk_period})",
+            height=500, margin=dict(l=10, r=10, t=40, b=10))
+        st.plotly_chart(fig_sk, use_container_width=True)
+        st.caption("Amounts in USD millions. Top 10 sectors shown.")
+    else:
+        st.info("No data for this selection.")
+
+    st.divider()
+
     # ─── PUBLIC vs PRIVATE ───
     st.markdown("#### Public vs Private")
     pp_c1, pp_c2, pp_c3 = st.columns([1, 1, 1])
@@ -559,6 +633,37 @@ def dashboard(df, region):
         st.caption(f"Approvals peaked in **{peak}**. Last 5 years leader: **{top_recent}**. "
                    f"WB trend: **{wb_trend}**. Avg annual: {fmt(total_yr.mean())}.")
 
+    # ─── YEAR-OVER-YEAR GROWTH ───
+    if len(total_yr) > 2:
+        yoy = total_yr.sort_index()
+        yoy_pct = yoy.pct_change() * 100
+        yoy_df = pd.DataFrame({"year": yoy_pct.index.astype(int), "yoy_pct": yoy_pct.values,
+                                "amount": yoy.values / 1e9}).dropna()
+        yoy_df["color"] = yoy_df["yoy_pct"].apply(lambda x: "#2D8659" if x >= 0 else "#C41E3A")
+        yoy_df["label"] = yoy_df["yoy_pct"].apply(lambda x: f"+{x:.0f}%" if x >= 0 else f"{x:.0f}%")
+
+        fig_yoy = go.Figure()
+        fig_yoy.add_trace(go.Bar(
+            x=yoy_df["year"], y=yoy_df["yoy_pct"],
+            marker_color=yoy_df["color"].tolist(),
+            text=yoy_df["label"], textposition="outside", textfont=dict(size=10),
+            hovertemplate="Year: %{x}<br>YoY: %{y:.1f}%<br>Volume: $%{customdata:.2f}B<extra></extra>",
+            customdata=yoy_df["amount"]))
+        fig_yoy.add_hline(y=0, line_width=1, line_color="gray")
+        # 3-year rolling average
+        if len(yoy_df) >= 3:
+            roll = yoy_df.set_index("year")["yoy_pct"].rolling(3, center=True).mean().dropna()
+            fig_yoy.add_trace(go.Scatter(
+                x=roll.index, y=roll.values, mode="lines",
+                line=dict(color="#1F4E79", width=2, dash="dash"),
+                name="3-yr rolling avg", hovertemplate="%{y:.1f}%<extra>3yr avg</extra>"))
+        fig_yoy.update_layout(
+            title=f"Year-over-Year Growth in Approvals (%){title_suffix}",
+            xaxis_title="Year", yaxis_title="YoY Change (%)", height=350,
+            margin=dict(l=10, r=10, t=40, b=10), showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=-0.25))
+        st.plotly_chart(gcfg(fig_yoy), use_container_width=True)
+
     # ─── TOP 25 PROJECTS (last 7 years) ───
     st.divider()
     st.markdown("#### Largest 25 Projects (last 7 years)")
@@ -645,9 +750,18 @@ def dashboard(df, region):
 
     # ─── PROJECT LIST ───
     st.markdown("#### Project List")
+    search_q = st.text_input("Search projects (title, description, institution, sector)", key="proj_search", placeholder="e.g. energy, EBRD, railway...")
     cols = ["project_id", "institution", "country", "title", "sector", "amount_usd",
             "approval_year", "status", "instrument_type", "public_private", "source_url"]
     tbl = data[cols].copy()
+    if search_q:
+        q = search_q.lower()
+        mask = (data["title"].str.lower().str.contains(q, na=False) |
+                data["description"].str.lower().str.contains(q, na=False) |
+                data["institution"].str.lower().str.contains(q, na=False) |
+                data["sector"].str.lower().str.contains(q, na=False))
+        tbl = tbl[mask.values]
+        st.caption(f"{len(tbl)} projects matching \"{search_q}\"")
     tbl["amount_usd"] = tbl["amount_usd"].apply(lambda x: f"${x/1e6:.1f}M" if x > 0 else "—")
     tbl["approval_year"] = tbl["approval_year"].apply(lambda x: str(int(x)) if pd.notna(x) else "—")
     tbl["link"] = tbl.apply(lambda r: r["source_url"] if r["source_url"] and r["source_url"] != "" else "", axis=1)
