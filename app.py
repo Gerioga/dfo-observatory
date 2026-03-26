@@ -497,12 +497,21 @@ def dashboard(df, region):
         node_colors = [INST_COLORS.get(i, "#999") for i in institutions] + ["#B0BEC5"] * len(sectors)
         link_colors = [hex_to_rgba(INST_COLORS.get(institutions[s], "#cccccc")) for s in sources]
 
+        # Position nodes: institutions on left (x=0.01), sectors on right (x=0.99)
+        n_inst = len(institutions)
+        n_sec = len(sectors)
+        node_x = [0.01] * n_inst + [0.99] * n_sec
+        node_y = [((i + 0.5) / n_inst) * 0.9 + 0.05 for i in range(n_inst)] + \
+                 [((i + 0.5) / n_sec) * 0.9 + 0.05 for i in range(n_sec)]
+
         fig_sk = go.Figure(go.Sankey(
-            node=dict(pad=15, thickness=20, label=all_labels, color=node_colors),
+            arrangement="snap",
+            node=dict(pad=15, thickness=20, label=all_labels, color=node_colors,
+                      x=node_x, y=node_y),
             link=dict(source=sources, target=targets, value=values, color=link_colors)))
         fig_sk.update_layout(
             title=f"Fund Flows — {sk_country} ({sk_period})",
-            height=500, margin=dict(l=10, r=10, t=40, b=10))
+            height=550, margin=dict(l=150, r=150, t=40, b=10))
         st.plotly_chart(fig_sk, use_container_width=True)
         st.caption("Amounts in USD millions. Top 10 sectors shown.")
     else:
