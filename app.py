@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Development Finance Observatory — Interactive Dashboard
+Development Donor Engagement Tracker — Interactive Dashboard
 Serbia or Sahel. World Bank perspective. USD (year-specific ECB rates).
 """
 
@@ -11,7 +11,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import os
 
-st.set_page_config(page_title="Dev Finance Observatory", page_icon="🏦", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Donor Engagement Tracker", page_icon="🏦", layout="wide", initial_sidebar_state="expanded")
 
 PASSWORD = os.environ.get("APP_PASSWORD", "donors26")
 DATA_PATH = os.path.join(os.path.dirname(__file__), "data.csv")
@@ -21,7 +21,7 @@ def check_password():
     """Simple password gate."""
     if "authenticated" in st.session_state and st.session_state["authenticated"]:
         return True
-    st.markdown("<div style='text-align:center;padding:80px 0 20px'><h1 style='color:#1F4E79'>Development Finance Observatory</h1></div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align:center;padding:80px 0 20px'><h1 style='color:#1F4E79'>Development Donor Engagement Tracker</h1></div>", unsafe_allow_html=True)
     _, c, _ = st.columns([1, 1, 1])
     with c:
         pwd = st.text_input("Password", type="password", key="pwd_input")
@@ -45,6 +45,23 @@ INST_COLORS = {
 COUNTRY_COLORS = {"Serbia": "#1F4E79", "Mali": "#E67E22", "Niger": "#27AE60", "Chad": "#8E44AD"}
 COUNTRY_COORDS = {"Mali": [17.57, -4.0], "Niger": [17.61, 8.08], "Chad": [15.45, 18.73]}
 CY = 2026
+
+# Donor groups for stacking
+DONOR_GROUPS = {
+    "World Bank": ["World Bank", "IFC", "MIGA"],
+    "UN Agencies": ["UNDP", "UNICEF", "WFP", "FAO"],
+    "EBRD": ["EBRD"],
+    "Chinese donors": ["Chinese donors"],
+    "KfW": ["KfW"],
+    "AFD": ["AFD"],
+    "EIB": ["EIB"],
+    "CEB": ["CEB"],
+}
+DONOR_GROUP_COLORS = {
+    "World Bank": "#2D8659", "UN Agencies": "#0072BC", "EBRD": "#1F4E79",
+    "Chinese donors": "#C41E3A", "KfW": "#0891B2", "AFD": "#BE185D",
+    "EIB": "#E67E22", "CEB": "#8B4513",
+}
 
 
 @st.cache_data
@@ -71,6 +88,13 @@ def gcfg(fig):
 def pfilter(data, period, yr_min):
     cut = {"All time": yr_min, "Last 10 years": CY-10, "Last 5 years": CY-5, "Last 2 years": CY-2}[period]
     return data[(data["approval_year"].isna()) | (data["approval_year"] >= cut)]
+
+
+def assign_donor_group(inst):
+    for group, members in DONOR_GROUPS.items():
+        if inst in members:
+            return group
+    return inst
 
 
 def compute_facts(data, region):
@@ -123,7 +147,7 @@ def compute_facts(data, region):
 # README
 # ═══════════════════════════════════════════════════════════════
 def readme_page():
-    st.markdown("<div style='text-align:center;padding:30px 0'><h1 style='color:#1F4E79'>Development Finance Observatory</h1></div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align:center;padding:30px 0'><h1 style='color:#1F4E79'>Development Donor Engagement Tracker</h1></div>", unsafe_allow_html=True)
     _, c, _ = st.columns([1, 3, 1])
     with c:
         st.markdown("""
@@ -179,7 +203,7 @@ Chinese donors (AidData v3.0) · UNDP/UNICEF/WFP/FAO (IATI)
 
 
 def home():
-    st.markdown("<div style='text-align:center;padding:60px 0 30px'><h1 style='color:#1F4E79;font-size:2.5em'>Development Finance Observatory</h1><p style='color:#666'>Cross-Regional Development Finance Analysis</p></div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align:center;padding:60px 0 30px'><h1 style='color:#1F4E79;font-size:2.5em'>Development Donor Engagement Tracker</h1><p style='color:#666'>Cross-Regional Development Finance Analysis</p></div>", unsafe_allow_html=True)
     _, c, _ = st.columns([1, 3, 1])
     with c:
         c1, c2, c3 = st.columns(3)
@@ -198,11 +222,12 @@ def home():
 # DASHBOARD
 # ═══════════════════════════════════════════════════════════════
 def dashboard(df, region):
+    sahel_countries = ["Mali", "Niger", "Chad"]
     if region == "Serbia":
         data = df[df["country"] == "Serbia"].copy()
         label, color = "Serbia", "#1F4E79"
     else:
-        data = df[df["country"].isin(["Mali", "Niger", "Chad"])].copy()
+        data = df[df["country"].isin(sahel_countries)].copy()
         label, color = "Sahel (Mali · Niger · Chad)", "#E67E22"
 
     with st.sidebar:
@@ -228,7 +253,7 @@ def dashboard(df, region):
     yr_min = int(data["approval_year"].dropna().min()) if len(data["approval_year"].dropna()) > 0 else 2000
 
     # Header
-    st.markdown(f"<div style='background:{color};padding:15px 25px;border-radius:8px;margin-bottom:20px'><h2 style='color:white;margin:0'>Development Finance Observatory — {label}</h2><p style='color:rgba(255,255,255,.7);margin:5px 0 0'>{len(data):,} projects · {data['institution'].nunique()} institutions · {fmt(data['amount_usd'].sum())}</p></div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='background:{color};padding:15px 25px;border-radius:8px;margin-bottom:20px'><h2 style='color:white;margin:0'>Development Donor Engagement Tracker — {label}</h2><p style='color:rgba(255,255,255,.7);margin:5px 0 0'>{len(data):,} projects · {data['institution'].nunique()} institutions · {fmt(data['amount_usd'].sum())}</p></div>", unsafe_allow_html=True)
 
     # KPIs
     k1, k2, k3, k4, k5 = st.columns(5)
@@ -341,16 +366,27 @@ def dashboard(df, region):
 
     with c2:
         if region == "Sahel":
-            # Stacked bar: country × institution
-            cross = d1.groupby(["country", "institution"])["amount_usd"].sum().reset_index()
+            # Stacked bar: country × main contributors only (remove 5 smallest)
+            cross = d1.copy()
+            cross.loc[cross["institution"].isin(UN_LIST), "institution"] = "UN Agencies"
+            cross = cross.groupby(["country", "institution"])["amount_usd"].sum().reset_index()
+            # Remove 5 smallest contributors overall
+            inst_totals = cross.groupby("institution")["amount_usd"].sum().sort_values(ascending=False)
+            if len(inst_totals) > 5:
+                top_inst = inst_totals.head(len(inst_totals) - 5).index.tolist()
+            else:
+                top_inst = inst_totals.index.tolist()
+            cross = cross[cross["institution"].isin(top_inst)]
             cross["mn"] = cross["amount_usd"] / 1e6
+            colors_grouped = {**INST_COLORS, "UN Agencies": "#0072BC"}
             fig2 = px.bar(cross, x="country", y="mn", color="institution",
-                          color_discrete_map=INST_COLORS,
-                          title=f"By Country × Institution ({p1}, USD mn)",
+                          color_discrete_map=colors_grouped,
+                          title=f"Main Contributors by Country ({p1}, USD mn)",
                           barmode="stack")
             fig2.update_layout(xaxis_title="", yaxis_title="USD (mn)", height=350,
                               margin=dict(l=10,r=10,t=40,b=10),
-                              legend=dict(orientation="h", yanchor="bottom", y=-0.35))
+                              legend=dict(orientation="h", yanchor="bottom", y=-0.25,
+                                         font=dict(size=10)))
         else:
             sdata = d1.groupby("sector")["amount_usd"].sum().sort_values(ascending=True).tail(10).reset_index()
             sdata["mn"] = sdata["amount_usd"] / 1e6
@@ -359,12 +395,44 @@ def dashboard(df, region):
             fig2.update_layout(showlegend=False, yaxis_title="", xaxis_title="USD (mn)", height=350, margin=dict(l=10,r=10,t=40,b=10))
         st.plotly_chart(gcfg(fig2), use_container_width=True)
 
+    # ─── TOP 10 SECTORS (with stack options) ───
     if region == "Sahel":
-        sdata = d1.groupby("sector")["amount_usd"].sum().sort_values(ascending=True).tail(10).reset_index()
-        sdata["mn"] = sdata["amount_usd"] / 1e6
-        fig_s = px.bar(sdata, y="sector", x="mn", orientation="h",
-                       title=f"Top 10 Sectors ({p1}, USD mn)", color_discrete_sequence=[color])
-        fig_s.update_layout(showlegend=False, yaxis_title="", xaxis_title="USD (mn)", height=300, margin=dict(l=10,r=10,t=40,b=10))
+        st.markdown("#### Top 10 Sectors")
+        sec_stack = st.radio("Stack by", ["None", "Country", "Donor group"], horizontal=True, key="sec_stack")
+        sdata_base = d1.copy()
+        top_sectors = sdata_base.groupby("sector")["amount_usd"].sum().nlargest(10).index.tolist()
+        sdata_base = sdata_base[sdata_base["sector"].isin(top_sectors)]
+
+        if sec_stack == "Country":
+            sec_agg = sdata_base.groupby(["sector", "country"])["amount_usd"].sum().reset_index()
+            sec_agg["mn"] = sec_agg["amount_usd"] / 1e6
+            sector_order = sec_agg.groupby("sector")["mn"].sum().sort_values(ascending=True).index.tolist()
+            sec_agg["sector"] = pd.Categorical(sec_agg["sector"], categories=sector_order, ordered=True)
+            fig_s = px.bar(sec_agg, y="sector", x="mn", color="country", orientation="h",
+                           color_discrete_map=COUNTRY_COLORS,
+                           title=f"Top 10 Sectors by Country ({p1}, USD mn)", barmode="stack")
+            fig_s.update_layout(yaxis_title="", xaxis_title="USD (mn)", height=400,
+                               margin=dict(l=10,r=10,t=40,b=10),
+                               legend=dict(orientation="h", yanchor="bottom", y=-0.2))
+        elif sec_stack == "Donor group":
+            sdata_base["donor_group"] = sdata_base["institution"].apply(assign_donor_group)
+            sec_agg = sdata_base.groupby(["sector", "donor_group"])["amount_usd"].sum().reset_index()
+            sec_agg["mn"] = sec_agg["amount_usd"] / 1e6
+            sector_order = sec_agg.groupby("sector")["mn"].sum().sort_values(ascending=True).index.tolist()
+            sec_agg["sector"] = pd.Categorical(sec_agg["sector"], categories=sector_order, ordered=True)
+            fig_s = px.bar(sec_agg, y="sector", x="mn", color="donor_group", orientation="h",
+                           color_discrete_map=DONOR_GROUP_COLORS,
+                           title=f"Top 10 Sectors by Donor Group ({p1}, USD mn)", barmode="stack")
+            fig_s.update_layout(yaxis_title="", xaxis_title="USD (mn)", height=400,
+                               margin=dict(l=10,r=10,t=40,b=10),
+                               legend=dict(orientation="h", yanchor="bottom", y=-0.2))
+        else:
+            sec_agg = sdata_base.groupby("sector")["amount_usd"].sum().sort_values(ascending=True).reset_index()
+            sec_agg["mn"] = sec_agg["amount_usd"] / 1e6
+            fig_s = px.bar(sec_agg, y="sector", x="mn", orientation="h",
+                           title=f"Top 10 Sectors ({p1}, USD mn)", color_discrete_sequence=[color])
+            fig_s.update_layout(showlegend=False, yaxis_title="", xaxis_title="USD (mn)", height=400,
+                               margin=dict(l=10,r=10,t=40,b=10))
         st.plotly_chart(gcfg(fig_s), use_container_width=True)
 
     st.divider()
@@ -373,36 +441,60 @@ def dashboard(df, region):
     st.markdown("#### Public vs Private")
     p2 = st.radio("Period", ["All time", "Last 10 years", "Last 5 years", "Last 2 years"], horizontal=True, key="p2")
     d2 = pfilter(data, p2, yr_min)
-    pp1, pp2 = st.columns(2)
-    with pp1:
-        ppd = d2.groupby("public_private")["amount_usd"].sum().reset_index()
-        ppd["mn"] = ppd["amount_usd"] / 1e6
-        fig_pp = px.pie(ppd, names="public_private", values="mn", title=f"By Amount ({p2}, USD mn)",
-                        hole=0.4, color_discrete_sequence=["#1F4E79", "#D97706"])
-        fig_pp.update_layout(height=300, margin=dict(l=10,r=10,t=40,b=10))
-        fig_pp.update_traces(textposition="outside", textinfo="label+percent")
-        st.plotly_chart(fig_pp, use_container_width=True)
-    with pp2:
-        ppc = d2["public_private"].value_counts().reset_index()
-        ppc.columns = ["type", "count"]
-        fig_ppc = px.pie(ppc, names="type", values="count", title=f"By Count ({p2})",
-                         hole=0.4, color_discrete_sequence=["#1F4E79", "#D97706"])
-        fig_ppc.update_layout(height=300, margin=dict(l=10,r=10,t=40,b=10))
-        fig_ppc.update_traces(textposition="outside", textinfo="label+percent")
-        st.plotly_chart(fig_ppc, use_container_width=True)
+
+    if region == "Sahel":
+        # One donut per country
+        countries_in_data = sorted(d2["country"].unique())
+        cols_pp = st.columns(len(countries_in_data)) if countries_in_data else [st.columns(1)[0]]
+        for idx, country in enumerate(countries_in_data):
+            with cols_pp[idx]:
+                cd = d2[d2["country"] == country]
+                ppd = cd.groupby("public_private")["amount_usd"].sum().reset_index()
+                ppd["mn"] = ppd["amount_usd"] / 1e6
+                fig_pp = px.pie(ppd, names="public_private", values="mn",
+                                title=f"{country} — Amount ({p2})",
+                                hole=0.4, color_discrete_sequence=["#1F4E79", "#D97706"])
+                fig_pp.update_layout(height=300, margin=dict(l=10,r=10,t=40,b=10))
+                fig_pp.update_traces(textposition="outside", textinfo="label+percent")
+                st.plotly_chart(fig_pp, use_container_width=True)
+    else:
+        pp1, pp2_col = st.columns(2)
+        with pp1:
+            ppd = d2.groupby("public_private")["amount_usd"].sum().reset_index()
+            ppd["mn"] = ppd["amount_usd"] / 1e6
+            fig_pp = px.pie(ppd, names="public_private", values="mn", title=f"By Amount ({p2}, USD mn)",
+                            hole=0.4, color_discrete_sequence=["#1F4E79", "#D97706"])
+            fig_pp.update_layout(height=300, margin=dict(l=10,r=10,t=40,b=10))
+            fig_pp.update_traces(textposition="outside", textinfo="label+percent")
+            st.plotly_chart(fig_pp, use_container_width=True)
+        with pp2_col:
+            ppc = d2["public_private"].value_counts().reset_index()
+            ppc.columns = ["type", "count"]
+            fig_ppc = px.pie(ppc, names="type", values="count", title=f"By Count ({p2})",
+                             hole=0.4, color_discrete_sequence=["#1F4E79", "#D97706"])
+            fig_ppc.update_layout(height=300, margin=dict(l=10,r=10,t=40,b=10))
+            fig_ppc.update_traces(textposition="outside", textinfo="label+percent")
+            st.plotly_chart(fig_ppc, use_container_width=True)
 
     st.divider()
 
     # ─── APPROVALS OVER TIME (last 25 years) ───
     st.markdown("#### Approvals Over Time (last 25 years)")
+    if region == "Sahel":
+        aot_country = st.selectbox("Country", ["All countries"] + sorted(data["country"].unique()), key="aot_country")
+    else:
+        aot_country = "All countries"
+
     timeline = data[data["approval_year"].notna()].copy()
     timeline = timeline[timeline["approval_year"] >= CY - 25]
+    if aot_country != "All countries":
+        timeline = timeline[timeline["country"] == aot_country]
     timeline["year"] = timeline["approval_year"].astype(int)
     tl = timeline.groupby(["year", "institution"])["amount_usd"].sum().reset_index()
     tl["mn"] = tl["amount_usd"] / 1e6
 
     fig_tl = px.bar(tl, x="year", y="mn", color="institution", color_discrete_map=INST_COLORS,
-                    title="DFI Approved Commitments (USD mn, stacked)", barmode="stack")
+                    title=f"DFI Approved Commitments (USD mn, stacked){' — ' + aot_country if aot_country != 'All countries' else ''}", barmode="stack")
     for inst in sorted(timeline["institution"].unique()):
         inst_yr = timeline[timeline["institution"] == inst].groupby("year")["amount_usd"].sum().reset_index()
         if len(inst_yr) > 2:
@@ -464,7 +556,15 @@ def dashboard(df, region):
     with ic2:
         p4 = st.radio("Period", ["All time", "Last 10 years", "Last 5 years", "Last 2 years"], horizontal=True, key="p4")
 
-    d_instr = pfilter(data if inst_sel == "All DFIs" else data[data["institution"] == inst_sel], p4, yr_min)
+    if region == "Sahel":
+        instr_country = st.selectbox("Country", ["All countries"] + sorted(data["country"].unique()), key="instr_country")
+    else:
+        instr_country = "All countries"
+
+    d_instr = data if inst_sel == "All DFIs" else data[data["institution"] == inst_sel]
+    if instr_country != "All countries":
+        d_instr = d_instr[d_instr["country"] == instr_country]
+    d_instr = pfilter(d_instr, p4, yr_min)
 
     ic3, ic4 = st.columns(2)
     with ic3:
@@ -494,23 +594,57 @@ def dashboard(df, region):
         st.divider()
         un_data = data[data["institution"].isin(UN_LIST)]
         if len(un_data) > 0:
-            st.markdown("#### UN Agencies & Operational Actors")
+            st.markdown("#### UN Agencies")
             st.caption("Programme budgets — not comparable with DFI loans/guarantees.")
+
+            un_country = st.selectbox("Country", ["All countries"] + sorted(un_data["country"].unique()), key="un_country")
+            un_filtered = un_data if un_country == "All countries" else un_data[un_data["country"] == un_country]
+
             u1, u2 = st.columns(2)
             with u1:
-                un_i = un_data.groupby("institution")["amount_usd"].sum().sort_values(ascending=True).reset_index()
+                un_i = un_filtered.groupby("institution")["amount_usd"].sum().sort_values(ascending=True).reset_index()
                 un_i["mn"] = un_i["amount_usd"] / 1e6
                 fig_un = px.bar(un_i, y="institution", x="mn", orientation="h", color="institution",
-                                color_discrete_map=INST_COLORS, title="UN Commitments (USD mn)")
+                                color_discrete_map=INST_COLORS,
+                                title=f"UN Commitments (USD mn){' — ' + un_country if un_country != 'All countries' else ''}")
                 fig_un.update_layout(showlegend=False, yaxis_title="", xaxis_title="USD (mn)", height=280, margin=dict(l=10,r=10,t=40,b=10))
                 st.plotly_chart(gcfg(fig_un), use_container_width=True)
             with u2:
-                un_s = un_data.groupby("sector")["amount_usd"].sum().sort_values(ascending=True).tail(8).reset_index()
-                un_s["mn"] = un_s["amount_usd"] / 1e6
-                fig_us = px.bar(un_s, y="sector", x="mn", orientation="h",
-                                title="UN — Top Sectors (USD mn)", color_discrete_sequence=["#0072BC"])
-                fig_us.update_layout(showlegend=False, yaxis_title="", xaxis_title="USD (mn)", height=280, margin=dict(l=10,r=10,t=40,b=10))
+                # Line chart: UN top sectors over last 10 years
+                un_10 = un_filtered[un_filtered["approval_year"].notna()].copy()
+                un_10 = un_10[un_10["approval_year"] >= CY - 10]
+                un_10["year"] = un_10["approval_year"].astype(int)
+                # Get top 6 sectors by total volume
+                top_un_sectors = un_10.groupby("sector")["amount_usd"].sum().nlargest(6).index.tolist()
+                un_10_top = un_10[un_10["sector"].isin(top_un_sectors)]
+                un_sec_yr = un_10_top.groupby(["year", "sector"])["amount_usd"].sum().reset_index()
+                un_sec_yr["mn"] = un_sec_yr["amount_usd"] / 1e6
+                fig_us = px.line(un_sec_yr, x="year", y="mn", color="sector",
+                                 title=f"UN — Top Sectors (last 10 years, USD mn){' — ' + un_country if un_country != 'All countries' else ''}",
+                                 markers=True)
+                fig_us.update_layout(yaxis_title="USD (mn)", xaxis_title="Year", height=280,
+                                    margin=dict(l=10,r=10,t=40,b=10),
+                                    legend=dict(orientation="h", yanchor="bottom", y=-0.4, font=dict(size=9)))
                 st.plotly_chart(gcfg(fig_us), use_container_width=True)
+
+            # ─── UN HEATMAP (active projects only) ───
+            st.markdown("##### Active Projects Heatmap")
+            un_active = un_filtered[un_filtered["status"].isin(["Active", "Exécution"])]
+            if len(un_active) > 0:
+                heat = un_active.groupby(["institution", "sector"]).size().reset_index(name="count")
+                heat_pivot = heat.pivot_table(index="sector", columns="institution", values="count", fill_value=0)
+                # Keep top 12 sectors by total count
+                heat_pivot["_total"] = heat_pivot.sum(axis=1)
+                heat_pivot = heat_pivot.nlargest(12, "_total").drop(columns=["_total"])
+                fig_heat = px.imshow(heat_pivot,
+                                     labels=dict(x="Agency", y="Sector", color="Projects"),
+                                     title=f"Active UN Projects — Agency × Sector{' — ' + un_country if un_country != 'All countries' else ''}",
+                                     color_continuous_scale="Blues",
+                                     text_auto=True, aspect="auto")
+                fig_heat.update_layout(height=400, margin=dict(l=10,r=10,t=40,b=10))
+                st.plotly_chart(fig_heat, use_container_width=True)
+            else:
+                st.info("No active UN projects in current selection.")
 
     st.divider()
 
