@@ -33,6 +33,7 @@ def check_password():
     return False
 
 DFI_LIST = ["CEB", "EIB", "EBRD", "World Bank", "IFC", "MIGA", "KfW", "AFD", "Chinese donors"]
+WBG_LIST = ["World Bank", "IFC", "MIGA"]
 UN_LIST = ["UNDP", "UNICEF", "WFP", "FAO"]
 
 INST_COLORS = {
@@ -73,8 +74,10 @@ def load_data():
 
 
 def fmt(v):
-    if v >= 1e9: return f"${v/1e9:.1f}B"
-    if v >= 1e6: return f"${v/1e6:.0f}M"
+    """Format amounts in billions."""
+    if abs(v) >= 1e9: return f"${v/1e9:.1f}B"
+    if abs(v) >= 1e8: return f"${v/1e9:.2f}B"
+    if abs(v) >= 1e6: return f"${v/1e9:.3f}B"
     return f"${v:,.0f}"
 
 def gcfg(fig):
@@ -98,16 +101,19 @@ def compute_facts(data, region):
     dfi5 = d5[d5["institution"].isin(DFI_LIST)]
     facts = []
 
-    wb5 = dfi5[dfi5["institution"] == "World Bank"]
+    # WB Group share (WB + IFC + MIGA)
+    wbg5 = dfi5[dfi5["institution"].isin(WBG_LIST)]
     if len(dfi5) > 0 and dfi5["amount_usd"].sum() > 0:
-        wb_share = wb5["amount_usd"].sum() / dfi5["amount_usd"].sum() * 100
-        facts.append(f"Over the last 5 years, **World Bank** accounts for **{wb_share:.0f}%** of DFI approvals ({fmt(wb5['amount_usd'].sum())}, {len(wb5)} projects).")
+        wbg_share = wbg5["amount_usd"].sum() / dfi5["amount_usd"].sum() * 100
+        facts.append(f"Over the last 5 years, **World Bank Group** (WB + IFC + MIGA) accounts for **{wbg_share:.0f}%** of DFI approvals ({fmt(wbg5['amount_usd'].sum())}, {len(wbg5)} projects).")
 
-    non_wb = dfi5[dfi5["institution"] != "World Bank"].groupby("institution")["amount_usd"].sum()
-    if len(non_wb) > 0:
-        top = non_wb.idxmax()
-        facts.append(f"**{top}** is the largest competing DFI in the last 5 years ({fmt(non_wb.max())}).")
+    # Largest non-WBG DFI
+    non_wbg = dfi5[~dfi5["institution"].isin(WBG_LIST)].groupby("institution")["amount_usd"].sum()
+    if len(non_wbg) > 0:
+        top = non_wbg.idxmax()
+        facts.append(f"**{top}** is the largest non-WBG development partner in the last 5 years ({fmt(non_wbg.max())}).")
 
+    # Trend
     wb_all = data[data["institution"] == "World Bank"]
     wb_yr = wb_all[wb_all["approval_year"].notna()].groupby("approval_year")["amount_usd"].sum()
     if len(wb_yr) > 3:
@@ -175,13 +181,17 @@ Cross-institution totals are indicative, not precise.
 **Note on Sahel DFI coverage:** Only **AFD** represents European bilateral DFIs in the Sahel dataset.
 EBRD, EIB, KfW, and CEB do not have project-level data available for Mali, Niger, or Chad.
 
+**Note on IFC/MIGA approval dates:** IFC and MIGA project records in the Sahel lack approval years
+in the source data. These projects appear in totals but not in time-series charts.
+
 ## Currency
 
-**USD** — EUR converted using year-specific ECB annual average rates. Chinese donors in constant 2021 USD.
+All amounts in **USD** (billions). EUR converted using year-specific ECB annual average rates.
+Chinese donors in constant 2021 USD.
 
 ## Public vs Private
 
-**Public**: sovereign/govt borrower. **Private**: company/fund/FI borrower.
+**Public**: sovereign/govt borrower. **Private**: company/fund/FI borrower (mostly IFC/MIGA).
 
 ## Sources
 
@@ -227,7 +237,6 @@ def dashboard(df, region):
         data = df[df["country"].isin(sahel_countries)].copy()
         label, color = "Sahel (Mali · Niger · Chad)", "#E67E22"
 
-    # Minimal sidebar — just navigation
     with st.sidebar:
         st.markdown(f"### {label}")
         st.markdown(f"**{len(data):,}** projects · **{fmt(data['amount_usd'].sum())}**")
@@ -323,45 +332,42 @@ def dashboard(df, region):
     if ci_country != "All countries":
         d_ci = d_ci[d_ci["country"] == ci_country]
 
-    col_ci1, col_ci2 = st.columns(2)
+    col_ci1, col_ci2 = st.columns([1, 2])
     with col_ci1:
-        # Group by donor group for cleaner view
         d_ci_g = d_ci.copy()
         d_ci_g["donor_group"] = d_ci_g["institution"].apply(assign_donor_group)
         idata = d_ci_g.groupby("donor_group")["amount_usd"].sum().sort_values(ascending=True).reset_index()
-        idata["mn"] = idata["amount_usd"] / 1e6
-        fig = px.bar(idata, y="donor_group", x="mn", orientation="h", color="donor_group",
+        idata["bn"] = idata["amount_usd"] / 1e9
+        fig = px.bar(idata, y="donor_group", x="bn", orientation="h", color="donor_group",
                      color_discrete_map=DONOR_GROUP_COLORS,
-                     title=f"By Donor Group ({ci_period}, USD mn)")
-        fig.update_layout(showlegend=False, yaxis_title="", xaxis_title="USD (mn)", height=350,
+                     title=f"By Donor Group ({ci_period})")
+        fig.update_layout(showlegend=False, yaxis_title="", xaxis_title="USD (billions)", height=350,
                          margin=dict(l=10,r=10,t=40,b=10))
         st.plotly_chart(gcfg(fig), use_container_width=True)
 
     with col_ci2:
         if region == "Sahel":
-            # Main contributors by country — remove smallest, group UN
             cross = d_ci.copy()
             cross["donor_group"] = cross["institution"].apply(assign_donor_group)
             cross = cross.groupby(["country", "donor_group"])["amount_usd"].sum().reset_index()
-            # Keep top groups (remove those with < 1% of total)
             group_totals = cross.groupby("donor_group")["amount_usd"].sum().sort_values(ascending=False)
             total = group_totals.sum()
             top_groups = group_totals[group_totals / max(total, 1) >= 0.01].index.tolist()
             cross = cross[cross["donor_group"].isin(top_groups)]
-            cross["mn"] = cross["amount_usd"] / 1e6
-            fig2 = px.bar(cross, x="country", y="mn", color="donor_group",
+            cross["bn"] = cross["amount_usd"] / 1e9
+            fig2 = px.bar(cross, x="country", y="bn", color="donor_group",
                           color_discrete_map=DONOR_GROUP_COLORS,
-                          title=f"Main Contributors by Country ({ci_period}, USD mn)",
+                          title=f"Main Contributors by Country ({ci_period})",
                           barmode="stack")
-            fig2.update_layout(xaxis_title="", yaxis_title="USD (mn)", height=350,
+            fig2.update_layout(xaxis_title="", yaxis_title="USD (billions)", height=350,
                               margin=dict(l=10,r=10,t=40,b=10),
                               legend=dict(orientation="h", yanchor="bottom", y=-0.25, font=dict(size=10)))
         else:
             sdata = d_ci.groupby("sector")["amount_usd"].sum().sort_values(ascending=True).tail(10).reset_index()
-            sdata["mn"] = sdata["amount_usd"] / 1e6
-            fig2 = px.bar(sdata, y="sector", x="mn", orientation="h",
-                          title=f"Top 10 Sectors ({ci_period}, USD mn)", color_discrete_sequence=[color])
-            fig2.update_layout(showlegend=False, yaxis_title="", xaxis_title="USD (mn)", height=350,
+            sdata["bn"] = sdata["amount_usd"] / 1e9
+            fig2 = px.bar(sdata, y="sector", x="bn", orientation="h",
+                          title=f"Top 10 Sectors ({ci_period})", color_discrete_sequence=[color])
+            fig2.update_layout(showlegend=False, yaxis_title="", xaxis_title="USD (billions)", height=350,
                               margin=dict(l=10,r=10,t=40,b=10))
         st.plotly_chart(gcfg(fig2), use_container_width=True)
 
@@ -382,39 +388,43 @@ def dashboard(df, region):
         if sec_country != "All countries":
             d_sec = d_sec[d_sec["country"] == sec_country]
 
-        top_sectors = d_sec.groupby("sector")["amount_usd"].sum().nlargest(10).index.tolist()
+        # Always compute sector totals for ordering
+        sector_totals = d_sec.groupby("sector")["amount_usd"].sum().nlargest(10)
+        top_sectors = sector_totals.index.tolist()
+        # Order: largest at top (ascending for horizontal bar = largest at bottom visually → reverse)
+        sector_order = sector_totals.sort_values(ascending=True).index.tolist()
         sdata_base = d_sec[d_sec["sector"].isin(top_sectors)]
 
         if sec_stack == "Country":
             sec_agg = sdata_base.groupby(["sector", "country"])["amount_usd"].sum().reset_index()
-            sec_agg["mn"] = sec_agg["amount_usd"] / 1e6
-            sector_order = sec_agg.groupby("sector")["mn"].sum().sort_values(ascending=True).index.tolist()
+            sec_agg["bn"] = sec_agg["amount_usd"] / 1e9
             sec_agg["sector"] = pd.Categorical(sec_agg["sector"], categories=sector_order, ordered=True)
-            fig_s = px.bar(sec_agg, y="sector", x="mn", color="country", orientation="h",
+            fig_s = px.bar(sec_agg, y="sector", x="bn", color="country", orientation="h",
                            color_discrete_map=COUNTRY_COLORS,
-                           title=f"Top 10 Sectors by Country ({sec_period}, USD mn)", barmode="stack")
-            fig_s.update_layout(yaxis_title="", xaxis_title="USD (mn)", height=420,
+                           title=f"Top 10 Sectors by Country ({sec_period})", barmode="stack")
+            fig_s.update_layout(yaxis_title="", xaxis_title="USD (billions)", height=420,
                                margin=dict(l=10,r=10,t=40,b=10),
                                legend=dict(orientation="h", yanchor="bottom", y=-0.15))
         elif sec_stack == "Donor group":
             sdata_base = sdata_base.copy()
             sdata_base["donor_group"] = sdata_base["institution"].apply(assign_donor_group)
             sec_agg = sdata_base.groupby(["sector", "donor_group"])["amount_usd"].sum().reset_index()
-            sec_agg["mn"] = sec_agg["amount_usd"] / 1e6
-            sector_order = sec_agg.groupby("sector")["mn"].sum().sort_values(ascending=True).index.tolist()
+            sec_agg["bn"] = sec_agg["amount_usd"] / 1e9
             sec_agg["sector"] = pd.Categorical(sec_agg["sector"], categories=sector_order, ordered=True)
-            fig_s = px.bar(sec_agg, y="sector", x="mn", color="donor_group", orientation="h",
+            fig_s = px.bar(sec_agg, y="sector", x="bn", color="donor_group", orientation="h",
                            color_discrete_map=DONOR_GROUP_COLORS,
-                           title=f"Top 10 Sectors by Donor Group ({sec_period}, USD mn)", barmode="stack")
-            fig_s.update_layout(yaxis_title="", xaxis_title="USD (mn)", height=420,
+                           title=f"Top 10 Sectors by Donor Group ({sec_period})", barmode="stack")
+            fig_s.update_layout(yaxis_title="", xaxis_title="USD (billions)", height=420,
                                margin=dict(l=10,r=10,t=40,b=10),
                                legend=dict(orientation="h", yanchor="bottom", y=-0.15))
         else:
-            sec_agg = sdata_base.groupby("sector")["amount_usd"].sum().sort_values(ascending=True).reset_index()
-            sec_agg["mn"] = sec_agg["amount_usd"] / 1e6
-            fig_s = px.bar(sec_agg, y="sector", x="mn", orientation="h",
-                           title=f"Top 10 Sectors ({sec_period}, USD mn)", color_discrete_sequence=[color])
-            fig_s.update_layout(showlegend=False, yaxis_title="", xaxis_title="USD (mn)", height=420,
+            sec_agg = sdata_base.groupby("sector")["amount_usd"].sum().reset_index()
+            sec_agg["bn"] = sec_agg["amount_usd"] / 1e9
+            sec_agg["sector"] = pd.Categorical(sec_agg["sector"], categories=sector_order, ordered=True)
+            sec_agg = sec_agg.sort_values("sector")
+            fig_s = px.bar(sec_agg, y="sector", x="bn", orientation="h",
+                           title=f"Top 10 Sectors ({sec_period})", color_discrete_sequence=[color])
+            fig_s.update_layout(showlegend=False, yaxis_title="", xaxis_title="USD (billions)", height=420,
                                margin=dict(l=10,r=10,t=40,b=10))
         st.plotly_chart(gcfg(fig_s), use_container_width=True)
 
@@ -432,7 +442,6 @@ def dashboard(df, region):
         else:
             pp_country = "All countries"
     with pp_c3:
-        # Donor group filter
         all_groups = sorted(data.copy().assign(dg=data["institution"].apply(assign_donor_group))["dg"].unique())
         pp_donor = st.selectbox("Donor group", ["All donors"] + all_groups, key="pp_donor")
 
@@ -444,7 +453,6 @@ def dashboard(df, region):
         d_pp = d_pp[d_pp["institution"].isin(members)]
 
     if region == "Sahel" and pp_country == "All countries":
-        # One donut per country
         countries_in_data = sorted(d_pp["country"].unique())
         if countries_in_data:
             cols_pp = st.columns(len(countries_in_data))
@@ -452,8 +460,8 @@ def dashboard(df, region):
                 with cols_pp[idx]:
                     cd = d_pp[d_pp["country"] == country]
                     ppd = cd.groupby("public_private")["amount_usd"].sum().reset_index()
-                    ppd["mn"] = ppd["amount_usd"] / 1e6
-                    fig_pp = px.pie(ppd, names="public_private", values="mn",
+                    ppd["bn"] = ppd["amount_usd"] / 1e9
+                    fig_pp = px.pie(ppd, names="public_private", values="bn",
                                     title=f"{country} ({pp_period})",
                                     hole=0.4, color_discrete_sequence=["#1F4E79", "#D97706"])
                     fig_pp.update_layout(height=300, margin=dict(l=10,r=10,t=40,b=10))
@@ -461,12 +469,12 @@ def dashboard(df, region):
                     st.plotly_chart(fig_pp, use_container_width=True)
     else:
         pp1_col, pp2_col = st.columns(2)
+        title_suffix = f" — {pp_country}" if pp_country != "All countries" else ""
         with pp1_col:
             ppd = d_pp.groupby("public_private")["amount_usd"].sum().reset_index()
-            ppd["mn"] = ppd["amount_usd"] / 1e6
-            title_suffix = f" — {pp_country}" if pp_country != "All countries" else ""
-            fig_pp = px.pie(ppd, names="public_private", values="mn",
-                            title=f"By Amount ({pp_period}, USD mn){title_suffix}",
+            ppd["bn"] = ppd["amount_usd"] / 1e9
+            fig_pp = px.pie(ppd, names="public_private", values="bn",
+                            title=f"By Amount ({pp_period}){title_suffix}",
                             hole=0.4, color_discrete_sequence=["#1F4E79", "#D97706"])
             fig_pp.update_layout(height=300, margin=dict(l=10,r=10,t=40,b=10))
             fig_pp.update_traces(textposition="outside", textinfo="label+percent")
@@ -481,11 +489,16 @@ def dashboard(df, region):
             fig_ppc.update_traces(textposition="outside", textinfo="label+percent")
             st.plotly_chart(fig_ppc, use_container_width=True)
 
+    # Note about private/IFC/MIGA missing years
+    if region == "Sahel":
+        st.caption("**Note:** IFC and MIGA projects (mostly private sector) lack approval dates in source data. "
+                   "They appear in totals and pie charts but not in time-series views.")
+
     st.divider()
 
     # ─── APPROVALS OVER TIME (last 25 years) ───
     st.markdown("#### Approvals Over Time (last 25 years)")
-    aot_c1, aot_c2, aot_c3, aot_c4 = st.columns(4)
+    aot_c1, aot_c2, aot_c3 = st.columns(3)
     with aot_c1:
         if region == "Sahel":
             aot_country = st.selectbox("Country", ["All countries"] + sorted(data["country"].unique()), key="aot_country")
@@ -501,8 +514,6 @@ def dashboard(df, region):
         else:
             possible_inst = sorted(data["institution"].unique())
         aot_inst = st.selectbox("Institution", ["All institutions"] + possible_inst, key="aot_inst")
-    with aot_c4:
-        aot_pp = st.radio("Public / Private", ["All", "Public", "Private"], horizontal=True, key="aot_pp")
 
     timeline = data[data["approval_year"].notna()].copy()
     timeline = timeline[timeline["approval_year"] >= CY - 25]
@@ -513,34 +524,29 @@ def dashboard(df, region):
         timeline = timeline[timeline["institution"].isin(members_aot)]
     if aot_inst != "All institutions":
         timeline = timeline[timeline["institution"] == aot_inst]
-    if aot_pp == "Public":
-        timeline = timeline[timeline["public_private"] == "public"]
-    elif aot_pp == "Private":
-        timeline = timeline[timeline["public_private"] == "private"]
 
     timeline["year"] = timeline["approval_year"].astype(int)
     tl = timeline.groupby(["year", "institution"])["amount_usd"].sum().reset_index()
-    tl["mn"] = tl["amount_usd"] / 1e6
+    tl["bn"] = tl["amount_usd"] / 1e9
 
     filter_desc = []
     if aot_country != "All countries": filter_desc.append(aot_country)
     if aot_group != "All donor groups": filter_desc.append(aot_group)
     if aot_inst != "All institutions": filter_desc.append(aot_inst)
-    if aot_pp != "All": filter_desc.append(aot_pp)
     title_suffix = f" — {', '.join(filter_desc)}" if filter_desc else ""
 
-    fig_tl = px.bar(tl, x="year", y="mn", color="institution", color_discrete_map=INST_COLORS,
-                    title=f"Approved Commitments (USD mn, stacked){title_suffix}", barmode="stack")
+    fig_tl = px.bar(tl, x="year", y="bn", color="institution", color_discrete_map=INST_COLORS,
+                    title=f"Approved Commitments (USD bn, stacked){title_suffix}", barmode="stack")
     for inst in sorted(timeline["institution"].unique()):
         inst_yr = timeline[timeline["institution"] == inst].groupby("year")["amount_usd"].sum().reset_index()
         if len(inst_yr) > 2:
-            x, y = inst_yr["year"].values, inst_yr["amount_usd"].values / 1e6
+            x, y = inst_yr["year"].values, inst_yr["amount_usd"].values / 1e9
             z = np.polyfit(x, y, 1)
             fig_tl.add_trace(go.Scatter(
                 x=x, y=np.poly1d(z)(x), mode="lines", name=f"{inst} trend",
                 line=dict(color=INST_COLORS.get(inst, "#999"), width=1.5, dash="dot"),
                 opacity=0.35, showlegend=False))
-    fig_tl.update_layout(xaxis_title="Year", yaxis_title="USD (mn)", height=450,
+    fig_tl.update_layout(xaxis_title="Year", yaxis_title="USD (billions)", height=450,
                          margin=dict(l=10,r=10,t=40,b=10),
                          legend=dict(orientation="h", yanchor="bottom", y=-0.25))
     st.plotly_chart(gcfg(fig_tl), use_container_width=True)
@@ -577,54 +583,10 @@ def dashboard(df, region):
     top25 = top_base.nlargest(25, "amount_usd")[
         ["institution", "country", "title", "sector", "amount_usd", "approval_year", "instrument_type"]
     ].copy()
-    top25["amount_usd"] = top25["amount_usd"].apply(lambda x: f"${x:,.0f}" if x > 0 else "—")
+    top25["amount_usd"] = top25["amount_usd"].apply(lambda x: f"${x/1e6:.1f}M" if x > 0 else "—")
     top25["approval_year"] = top25["approval_year"].apply(lambda x: str(int(x)) if pd.notna(x) else "—")
     top25.columns = ["Institution", "Country", "Title", "Sector", "Amount (USD)", "Year", "Instrument"]
     st.dataframe(top25, use_container_width=True, height=400, hide_index=True)
-
-    st.divider()
-
-    # ─── INSTRUMENT TYPE ───
-    st.markdown("#### Instrument Type Breakdown")
-    st.caption("Instruments differ by institution — not directly comparable across institutions.")
-    ic1, ic2, ic3 = st.columns([1, 1, 1])
-    with ic1:
-        inst_sel = st.selectbox("Institution", ["All DFIs"] + sorted(data["institution"].unique()), key="instr_i")
-    with ic2:
-        instr_period = st.radio("Period", ["All time", "Last 10 years", "Last 5 years", "Last 2 years"],
-                                horizontal=True, key="instr_p")
-    with ic3:
-        if region == "Sahel":
-            instr_country = st.selectbox("Country", ["All countries"] + sorted(data["country"].unique()), key="instr_country")
-        else:
-            instr_country = "All countries"
-
-    d_instr = data if inst_sel == "All DFIs" else data[data["institution"] == inst_sel]
-    if instr_country != "All countries":
-        d_instr = d_instr[d_instr["country"] == instr_country]
-    d_instr = pfilter(d_instr, instr_period, yr_min)
-
-    ic3_col, ic4_col = st.columns(2)
-    with ic3_col:
-        idr = d_instr["instrument_type"].value_counts().reset_index()
-        idr.columns = ["instrument", "count"]
-        fig_i = px.pie(idr, names="instrument", values="count",
-                       title=f"Instrument — {inst_sel} ({instr_period})", hole=0.4)
-        fig_i.update_layout(height=300, margin=dict(l=10,r=10,t=40,b=10))
-        fig_i.update_traces(textposition="outside", textinfo="label+percent")
-        st.plotly_chart(fig_i, use_container_width=True)
-    with ic4_col:
-        ida = d_instr.groupby("instrument_type").agg(
-            total_usd=("amount_usd", "sum"), count=("amount_usd", "size")
-        ).sort_values("total_usd", ascending=True).reset_index()
-        ida["mn"] = ida["total_usd"] / 1e6
-        ida["label"] = ida.apply(lambda r: f"{r['instrument_type']} ({int(r['count'])})", axis=1)
-        fig_ia = px.bar(ida, y="label", x="mn", orientation="h",
-                        title=f"By Amount — {inst_sel} ({instr_period}, USD mn)",
-                        color_discrete_sequence=[color])
-        fig_ia.update_layout(showlegend=False, yaxis_title="", xaxis_title="USD (mn)", height=300,
-                            margin=dict(l=10,r=10,t=40,b=10))
-        st.plotly_chart(gcfg(fig_ia), use_container_width=True)
 
     # ─── UN AGENCIES (Sahel) ───
     if region == "Sahel":
@@ -636,34 +598,34 @@ def dashboard(df, region):
 
             un_country = st.selectbox("Country", ["All countries"] + sorted(un_data["country"].unique()), key="un_country")
             un_filtered = un_data if un_country == "All countries" else un_data[un_data["country"] == un_country]
+            un_suffix = f" — {un_country}" if un_country != "All countries" else ""
 
-            u1, u2 = st.columns(2)
-            with u1:
-                un_i = un_filtered.groupby("institution")["amount_usd"].sum().sort_values(ascending=True).reset_index()
-                un_i["mn"] = un_i["amount_usd"] / 1e6
-                fig_un = px.bar(un_i, y="institution", x="mn", orientation="h", color="institution",
-                                color_discrete_map=INST_COLORS,
-                                title=f"UN Commitments (USD mn){' — ' + un_country if un_country != 'All countries' else ''}")
-                fig_un.update_layout(showlegend=False, yaxis_title="", xaxis_title="USD (mn)", height=280,
-                                    margin=dict(l=10,r=10,t=40,b=10))
-                st.plotly_chart(gcfg(fig_un), use_container_width=True)
-            with u2:
-                # Line chart: UN top sectors over last 10 years — more vertical space
-                un_10 = un_filtered[un_filtered["approval_year"].notna()].copy()
-                un_10 = un_10[un_10["approval_year"] >= CY - 10]
-                un_10["year"] = un_10["approval_year"].astype(int)
-                top_un_sectors = un_10.groupby("sector")["amount_usd"].sum().nlargest(6).index.tolist()
-                un_10_top = un_10[un_10["sector"].isin(top_un_sectors)]
-                un_sec_yr = un_10_top.groupby(["year", "sector"])["amount_usd"].sum().reset_index()
-                un_sec_yr["mn"] = un_sec_yr["amount_usd"] / 1e6
-                fig_us = px.line(un_sec_yr, x="year", y="mn", color="sector",
-                                 title=f"UN — Top Sectors (last 10 years){' — ' + un_country if un_country != 'All countries' else ''}",
-                                 markers=True)
-                fig_us.update_layout(yaxis_title="USD (mn)", xaxis_title="Year", height=400,
-                                    margin=dict(l=10,r=10,t=40,b=40),
-                                    legend=dict(orientation="h", yanchor="top", y=-0.2, font=dict(size=10)),
-                                    xaxis=dict(dtick=1))
-                st.plotly_chart(gcfg(fig_us), use_container_width=True)
+            # UN Commitments bar
+            un_i = un_filtered.groupby("institution")["amount_usd"].sum().sort_values(ascending=True).reset_index()
+            un_i["bn"] = un_i["amount_usd"] / 1e9
+            fig_un = px.bar(un_i, y="institution", x="bn", orientation="h", color="institution",
+                            color_discrete_map=INST_COLORS,
+                            title=f"UN Commitments (USD bn){un_suffix}")
+            fig_un.update_layout(showlegend=False, yaxis_title="", xaxis_title="USD (billions)", height=280,
+                                margin=dict(l=10,r=10,t=40,b=10))
+            st.plotly_chart(gcfg(fig_un), use_container_width=True)
+
+            # Line chart: UN top sectors over last 10 years — FULL WIDTH below
+            un_10 = un_filtered[un_filtered["approval_year"].notna()].copy()
+            un_10 = un_10[un_10["approval_year"] >= CY - 10]
+            un_10["year"] = un_10["approval_year"].astype(int)
+            top_un_sectors = un_10.groupby("sector")["amount_usd"].sum().nlargest(6).index.tolist()
+            un_10_top = un_10[un_10["sector"].isin(top_un_sectors)]
+            un_sec_yr = un_10_top.groupby(["year", "sector"])["amount_usd"].sum().reset_index()
+            un_sec_yr["bn"] = un_sec_yr["amount_usd"] / 1e9
+            fig_us = px.line(un_sec_yr, x="year", y="bn", color="sector",
+                             title=f"UN — Top Sectors over Time (last 10 years){un_suffix}",
+                             markers=True)
+            fig_us.update_layout(yaxis_title="USD (billions)", xaxis_title="Year", height=450,
+                                margin=dict(l=10,r=10,t=40,b=60),
+                                legend=dict(orientation="h", yanchor="top", y=-0.15, font=dict(size=11)),
+                                xaxis=dict(dtick=1, tickangle=0))
+            st.plotly_chart(gcfg(fig_us), use_container_width=True)
 
             # ─── UN HEATMAP (active projects only) ───
             st.markdown("##### Active Projects Heatmap")
@@ -675,7 +637,7 @@ def dashboard(df, region):
                 heat_pivot = heat_pivot.nlargest(12, "_total").drop(columns=["_total"])
                 fig_heat = px.imshow(heat_pivot,
                                      labels=dict(x="Agency", y="Sector", color="Projects"),
-                                     title=f"Active UN Projects — Agency × Sector{' — ' + un_country if un_country != 'All countries' else ''}",
+                                     title=f"Active UN Projects — Agency × Sector{un_suffix}",
                                      color_continuous_scale="Blues", text_auto=True, aspect="auto")
                 fig_heat.update_layout(height=450, margin=dict(l=10,r=10,t=40,b=10))
                 st.plotly_chart(fig_heat, use_container_width=True)
@@ -689,7 +651,7 @@ def dashboard(df, region):
     cols = ["project_id", "institution", "country", "title", "sector", "amount_usd",
             "approval_year", "status", "instrument_type", "public_private", "source_url"]
     tbl = data[cols].copy()
-    tbl["amount_usd"] = tbl["amount_usd"].apply(lambda x: f"${x:,.0f}" if x > 0 else "—")
+    tbl["amount_usd"] = tbl["amount_usd"].apply(lambda x: f"${x/1e6:.1f}M" if x > 0 else "—")
     tbl["approval_year"] = tbl["approval_year"].apply(lambda x: str(int(x)) if pd.notna(x) else "—")
     tbl["link"] = tbl.apply(lambda r: r["source_url"] if r["source_url"] and r["source_url"] != "" else "", axis=1)
     tbl["id"] = tbl["project_id"]
