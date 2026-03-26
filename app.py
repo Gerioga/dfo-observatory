@@ -497,21 +497,39 @@ def dashboard(df, region):
         node_colors = [INST_COLORS.get(i, "#999") for i in institutions] + ["#B0BEC5"] * len(sectors)
         link_colors = [hex_to_rgba(INST_COLORS.get(institutions[s], "#cccccc")) for s in sources]
 
-        # Position nodes: institutions on left (x=0.01), sectors on right (x=0.99)
+        # Position nodes: institutions on left, sectors on right
         n_inst = len(institutions)
         n_sec = len(sectors)
-        node_x = [0.01] * n_inst + [0.99] * n_sec
+        node_x = [0.15] * n_inst + [0.85] * n_sec
         node_y = [((i + 0.5) / n_inst) * 0.9 + 0.05 for i in range(n_inst)] + \
                  [((i + 0.5) / n_sec) * 0.9 + 0.05 for i in range(n_sec)]
 
+        # Hide built-in labels, we'll use annotations
+        blank_labels = [""] * len(all_labels)
+
         fig_sk = go.Figure(go.Sankey(
             arrangement="snap",
-            node=dict(pad=15, thickness=20, label=all_labels, color=node_colors,
+            node=dict(pad=15, thickness=20, label=blank_labels, color=node_colors,
                       x=node_x, y=node_y),
             link=dict(source=sources, target=targets, value=values, color=link_colors)))
+
+        # Add annotations: institutions on the left, sectors on the right
+        annotations = []
+        for i, name in enumerate(institutions):
+            annotations.append(dict(
+                x=0.0, y=node_y[i], xref="paper", yref="paper",
+                text=f"<b>{name}</b>", showarrow=False,
+                xanchor="right", yanchor="middle", font=dict(size=12)))
+        for i, name in enumerate(sectors):
+            annotations.append(dict(
+                x=1.0, y=node_y[n_inst + i], xref="paper", yref="paper",
+                text=f"<b>{name}</b>", showarrow=False,
+                xanchor="left", yanchor="middle", font=dict(size=12)))
+
         fig_sk.update_layout(
             title=f"Fund Flows — {sk_country} ({sk_period})",
-            height=550, margin=dict(l=150, r=150, t=40, b=10))
+            height=550, margin=dict(l=160, r=180, t=40, b=10),
+            annotations=annotations)
         st.plotly_chart(fig_sk, use_container_width=True)
         st.caption("Amounts in USD millions. Top 10 sectors shown.")
     else:
