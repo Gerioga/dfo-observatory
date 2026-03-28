@@ -291,13 +291,22 @@ def dashboard(df, region):
 
     with st.sidebar:
         st.markdown(f"### {label}")
-        st.markdown(f"**{len(data):,}** projects · **{fmt(data['amount_usd'].sum())}**")
+        st.divider()
+        exclude_china = st.checkbox("Exclude Chinese donors", value=False, key="exclude_china")
         st.divider()
         if st.button("← Home"): del st.session_state["page"]; st.rerun()
         if st.button("📖 README"): st.session_state["page"] = "readme"; st.rerun()
         others = [r for r in ["Serbia", "Sahel", "CEMAC"] if r != region]
         for other in others:
             if st.button(f"→ {other}"): st.session_state["page"] = other; st.rerun()
+
+    if exclude_china:
+        data = data[data["institution"] != "Chinese donors"]
+
+    # Sidebar stats (after filter)
+    with st.sidebar:
+        st.divider()
+        st.markdown(f"**{len(data):,}** projects · **{fmt(data['amount_usd'].sum())}**")
 
     yr_min = int(data["approval_year"].dropna().min()) if len(data["approval_year"].dropna()) > 0 else 2000
 
