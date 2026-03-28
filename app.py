@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Development Donor Engagement Tracker — Interactive Dashboard
-Serbia or Sahel. World Bank perspective. USD (year-specific ECB rates).
+Serbia, Sahel, or CEMAC. World Bank perspective. USD (year-specific ECB rates).
 """
 
 import streamlit as st
