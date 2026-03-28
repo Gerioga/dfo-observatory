@@ -181,7 +181,7 @@ and compared side by side.
 **Approved commitments only.** Disbursements are not tracked. **MIGA** figures are
 **guarantee ceilings** (max exposure), not cash investments.
 
-**Cancelled/dropped/suspended projects excluded** (51 removed).
+**Cancelled/dropped/suspended projects excluded** (108 removed).
 
 **Co-financing is not netted out.** Same project may appear under multiple institutions.
 Cross-institution totals are indicative, not precise.
