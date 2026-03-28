@@ -42,8 +42,20 @@ INST_COLORS = {
     "EIB": "#E67E22", "CEB": "#8B4513",
     "UNDP": "#0072BC", "UNICEF": "#1CABE2", "WFP": "#E3242B", "FAO": "#006838",
 }
-COUNTRY_COLORS = {"Serbia": "#1F4E79", "Mali": "#E67E22", "Niger": "#27AE60", "Chad": "#8E44AD"}
+COUNTRY_COLORS = {
+    "Serbia": "#1F4E79", "Mali": "#E67E22", "Niger": "#27AE60", "Chad": "#8E44AD",
+    "Cameroon": "#2980B9", "Central African Republic": "#C0392B",
+    "Congo Republic": "#16A085", "Equatorial Guinea": "#D35400", "Gabon": "#7D3C98",
+}
+SAHEL_COUNTRIES = ["Mali", "Niger", "Chad"]
+CEMAC_COUNTRIES = ["Cameroon", "Central African Republic", "Chad",
+                   "Congo Republic", "Equatorial Guinea", "Gabon"]
 COUNTRY_COORDS = {"Mali": [17.57, -4.0], "Niger": [17.61, 8.08], "Chad": [15.45, 18.73]}
+CEMAC_COORDS = {
+    "Cameroon": [7.37, 12.35], "Central African Republic": [6.61, 20.94],
+    "Chad": [15.45, 18.73], "Congo Republic": [-0.23, 15.83],
+    "Equatorial Guinea": [1.65, 10.27], "Gabon": [-0.80, 11.61],
+}
 CY = 2026
 
 DONOR_GROUPS = {
@@ -140,7 +152,7 @@ def compute_facts(data, region):
     if len(miga5) > 0:
         facts.append(f"**MIGA** guarantee exposure: {fmt(miga5['amount_usd'].sum())} (guarantee ceilings, not disbursed capital).")
 
-    if region == "Sahel":
+    if region in ("Sahel", "CEMAC"):
         un5 = d5[d5["institution"].isin(UN_LIST)]
         if len(un5) > 0:
             facts.append(f"**UN agencies** (UNDP, UNICEF, WFP, FAO): {len(un5)} activities, {fmt(un5['amount_usd'].sum())} in last 5 years.")
@@ -182,9 +194,10 @@ Cross-institution totals are indicative, not precise.
 |--------|-----------|------|----|
 | **ECA** | Serbia | CEB, EIB, EBRD, WB, IFC, MIGA, KfW, AFD, Chinese donors | — |
 | **Sahel** | Mali, Niger, Chad | WB, IFC, MIGA, AFD, Chinese donors | UNDP, UNICEF, WFP, FAO |
+| **CEMAC** | Cameroon, CAR, Chad, Congo Rep., Eq. Guinea, Gabon | WB, IFC, MIGA, Chinese donors | UNDP, UNICEF, WFP, FAO |
 
-**Note on Sahel DFI coverage:** Only **AFD** represents European bilateral DFIs in the Sahel dataset.
-EBRD, EIB, KfW, and CEB do not have project-level data available for Mali, Niger, or Chad.
+**Note on Sahel/CEMAC DFI coverage:** Only **AFD** represents European bilateral DFIs in the Sahel.
+EBRD, EIB, KfW, and CEB do not have project-level data for these regions. Chad appears in both Sahel and CEMAC.
 
 ## Currency
 
@@ -208,6 +221,7 @@ Chinese donors (AidData v3.0) · UNDP/UNICEF/WFP/FAO (IATI)
         df_cov = load_data()
         df_cov = df_cov[df_cov["approval_year"].notna()]
         sahel_c = ["Mali", "Niger", "Chad"]
+        cemac_c = ["Cameroon", "Central African Republic", "Chad", "Congo Republic", "Equatorial Guinea", "Gabon"]
         rows = []
         for inst in sorted(df_cov["institution"].unique()):
             idf = df_cov[df_cov["institution"] == inst]
@@ -219,18 +233,26 @@ Chinese donors (AidData v3.0) · UNDP/UNICEF/WFP/FAO (IATI)
             h = idf[idf["country"].isin(sahel_c)]
             h_range = f"{int(h['approval_year'].min())}–{int(h['approval_year'].max())}" if len(h) > 0 else "—"
             h_n = len(h) if len(h) > 0 else 0
+            # CEMAC
+            m = idf[idf["country"].isin(cemac_c)]
+            m_range = f"{int(m['approval_year'].min())}–{int(m['approval_year'].max())}" if len(m) > 0 else "—"
+            m_n = len(m) if len(m) > 0 else 0
             rows.append({"Institution": inst, "Serbia (years)": s_range, "Serbia (#)": s_n,
-                          "Sahel (years)": h_range, "Sahel (#)": h_n})
+                          "Sahel (years)": h_range, "Sahel (#)": h_n,
+                          "CEMAC (years)": m_range, "CEMAC (#)": m_n})
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
         st.divider()
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
         with c1:
             if st.button("🇷🇸 SERBIA", use_container_width=True, type="primary"):
                 st.session_state["page"] = "Serbia"; st.rerun()
         with c2:
             if st.button("🌍 SAHEL", use_container_width=True, type="primary"):
                 st.session_state["page"] = "Sahel"; st.rerun()
+        with c3:
+            if st.button("🌍 CEMAC", use_container_width=True, type="primary"):
+                st.session_state["page"] = "CEMAC"; st.rerun()
 
 
 def home():
@@ -245,7 +267,11 @@ def home():
             if st.button("🌍 SAHEL\n\nMali · Niger · Chad", use_container_width=True, type="primary"):
                 st.session_state["page"] = "Sahel"; st.rerun()
         with c3:
-            if st.button("📖 README\n\nMethodology", use_container_width=True):
+            if st.button("🌍 CEMAC\n\n6 countries", use_container_width=True, type="primary"):
+                st.session_state["page"] = "CEMAC"; st.rerun()
+        _, rc, _ = st.columns([1, 1, 1])
+        with rc:
+            if st.button("📖 README · Methodology", use_container_width=True):
                 st.session_state["page"] = "readme"; st.rerun()
 
 
@@ -253,12 +279,14 @@ def home():
 # DASHBOARD
 # ═══════════════════════════════════════════════════════════════
 def dashboard(df, region):
-    sahel_countries = ["Mali", "Niger", "Chad"]
     if region == "Serbia":
         data = df[df["country"] == "Serbia"].copy()
         label, color = "Serbia", "#1F4E79"
+    elif region == "CEMAC":
+        data = df[df["country"].isin(CEMAC_COUNTRIES)].copy()
+        label, color = "CEMAC (Cameroon · CAR · Chad · Congo Rep. · Eq. Guinea · Gabon)", "#2980B9"
     else:
-        data = df[df["country"].isin(sahel_countries)].copy()
+        data = df[df["country"].isin(SAHEL_COUNTRIES)].copy()
         label, color = "Sahel (Mali · Niger · Chad)", "#E67E22"
 
     with st.sidebar:
@@ -267,8 +295,9 @@ def dashboard(df, region):
         st.divider()
         if st.button("← Home"): del st.session_state["page"]; st.rerun()
         if st.button("📖 README"): st.session_state["page"] = "readme"; st.rerun()
-        other = "Sahel" if region == "Serbia" else "Serbia"
-        if st.button(f"→ {other}"): st.session_state["page"] = other; st.rerun()
+        others = [r for r in ["Serbia", "Sahel", "CEMAC"] if r != region]
+        for other in others:
+            if st.button(f"→ {other}"): st.session_state["page"] = other; st.rerun()
 
     yr_min = int(data["approval_year"].dropna().min()) if len(data["approval_year"].dropna()) > 0 else 2000
 
@@ -293,10 +322,13 @@ def dashboard(df, region):
         for i, fact in enumerate(facts):
             cols_f[i % 3].info(fact)
 
-    # ─── MAP (Sahel only) ───
-    if region == "Sahel":
+    # ─── MAP (Sahel & CEMAC) ───
+    if region in ("Sahel", "CEMAC"):
+        coords_map = CEMAC_COORDS if region == "CEMAC" else COUNTRY_COORDS
+        map_center = {"lat": 5, "lon": 15} if region == "CEMAC" else {"lat": 16, "lon": 8}
+        map_zoom = 3
         st.divider()
-        st.markdown("#### Sahel Map")
+        st.markdown(f"#### {region} Map")
         mc1, mc2 = st.columns([2, 1])
         with mc2:
             map_period = st.selectbox("Period", ["All time", "Last 10 years", "Last 5 years", "Last 2 years"], key="map_p")
@@ -309,7 +341,7 @@ def dashboard(df, region):
         ], key="map_ind")
 
         map_data = []
-        for country, coords in COUNTRY_COORDS.items():
+        for country, coords in coords_map.items():
             cd = map_base[map_base["country"] == country]
             if map_indicator == "Total commitments (USD)":
                 val = cd["amount_usd"].sum(); display = fmt(val); size = max(val / 1e8, 5)
@@ -331,7 +363,7 @@ def dashboard(df, region):
         fig_map = px.scatter_mapbox(map_df, lat="lat", lon="lon", size="size",
             hover_name="country", hover_data={"value": True, "size": False, "lat": False, "lon": False},
             color_discrete_sequence=[color], title=f"{map_indicator} by Country",
-            zoom=3, center={"lat": 16, "lon": 8})
+            zoom=map_zoom, center=map_center)
         fig_map.update_layout(mapbox_style="carto-positron", height=400, margin=dict(l=0, r=0, t=40, b=0))
         fig_map.add_trace(go.Scattermapbox(
             lat=[d["lat"] for d in map_data], lon=[d["lon"] for d in map_data], mode="text",
@@ -347,7 +379,7 @@ def dashboard(df, region):
     with ci_c1:
         ci_period = st.radio("Period", ["All time", "Last 10 years", "Last 5 years", "Last 2 years"], horizontal=True, key="ci_p")
     with ci_c2:
-        if region == "Sahel":
+        if region in ("Sahel", "CEMAC"):
             ci_country = st.selectbox("Country", ["All countries"] + sorted(data["country"].unique()), key="ci_country")
         else:
             ci_country = "All countries"
@@ -370,7 +402,7 @@ def dashboard(df, region):
         st.plotly_chart(gcfg(fig), use_container_width=True)
 
     with col_ci2:
-        if region == "Sahel":
+        if region in ("Sahel", "CEMAC"):
             cross = d_ci.copy()
             cross["donor_group"] = cross["institution"].apply(assign_donor_group)
             cross = cross.groupby(["country", "donor_group"])["amount_usd"].sum().reset_index()
@@ -396,7 +428,7 @@ def dashboard(df, region):
         st.plotly_chart(gcfg(fig2), use_container_width=True)
 
     # ─── TOP 10 SECTORS ───
-    if region == "Sahel":
+    if region in ("Sahel", "CEMAC"):
         st.divider()
         st.markdown("#### Top 10 Sectors")
         sc1, sc2, sc3 = st.columns([1, 1, 1])
@@ -460,7 +492,7 @@ def dashboard(df, region):
         sk_period = st.radio("Period", ["All time", "Last 10 years", "Last 5 years", "Last 2 years"],
                              horizontal=True, key="sk_p")
     with sk_c2:
-        if region == "Sahel":
+        if region in ("Sahel", "CEMAC"):
             sk_countries = sorted(data["country"].unique())
         else:
             sk_countries = ["Serbia"]
@@ -544,7 +576,7 @@ def dashboard(df, region):
         pp_period = st.radio("Period", ["All time", "Last 10 years", "Last 5 years", "Last 2 years"],
                              horizontal=True, key="pp_p")
     with pp_c2:
-        if region == "Sahel":
+        if region in ("Sahel", "CEMAC"):
             pp_country = st.selectbox("Country", ["All countries"] + sorted(data["country"].unique()), key="pp_country")
         else:
             pp_country = "All countries"
@@ -559,7 +591,7 @@ def dashboard(df, region):
         members = DONOR_GROUPS.get(pp_donor, [pp_donor])
         d_pp = d_pp[d_pp["institution"].isin(members)]
 
-    if region == "Sahel" and pp_country == "All countries":
+    if region in ("Sahel", "CEMAC") and pp_country == "All countries":
         countries_in_data = sorted(d_pp["country"].unique())
         if countries_in_data:
             cols_pp = st.columns(len(countries_in_data))
@@ -603,7 +635,7 @@ def dashboard(df, region):
     st.markdown("#### Approvals Over Time (last 25 years)")
     aot_c1, aot_c2, aot_c3 = st.columns(3)
     with aot_c1:
-        if region == "Sahel":
+        if region in ("Sahel", "CEMAC"):
             aot_country = st.selectbox("Country", ["All countries"] + sorted(data["country"].unique()), key="aot_country")
         else:
             aot_country = "All countries"
@@ -723,7 +755,7 @@ def dashboard(df, region):
     st.dataframe(top25, use_container_width=True, height=400, hide_index=True)
 
     # ─── UN AGENCIES (Sahel) ───
-    if region == "Sahel":
+    if region in ("Sahel", "CEMAC"):
         st.divider()
         un_data = data[data["institution"].isin(UN_LIST)]
         if len(un_data) > 0:
@@ -819,6 +851,7 @@ def main():
     if page == "readme": readme_page()
     elif page == "Serbia": dashboard(df, "Serbia")
     elif page == "Sahel": dashboard(df, "Sahel")
+    elif page == "CEMAC": dashboard(df, "CEMAC")
     else: home()
 
 if __name__ == "__main__":
